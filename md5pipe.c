@@ -8,54 +8,72 @@
 #include <signal.h>
 #include <sys/fcntl.h>
 #include "md5.h"
+#include <sys/wait.h>
 
 
-#define MSGSIZE 20 
-  
-int main() 
-{ 
-    char inbuf[MSGSIZE]; 
-    int p1[2], p2[2], pid, nbytes; 
-  	
-  	/* pipes creation check */
-    if (pipe(p1) < 0) 
-        exit(-1); 
-    if (pipe(p2) < 0) 
-        exit(-1); 
+pid_t pid;
+char buff[20];
+bool flag = 0;  //for signal handler
+int chlidpid = 0;
+std::string msgrevered;
+char* ans;
 
-    /* Parent */
-    if ((pid = fork()) > 0) {
+void catchSignal(int sig_num)
+{
+    if(strlen(msgrevered.c_str()) == 32){
+        flag = 1;
+    }
+};
 
-    	scanf("%s",inbuf);	//get input string from user length<=20 
-        close(p1[0]);
-        write(p1[1], inbuf, MSGSIZE);	//send string via pipe
-        close(p1[1]);
 
-        //wait for child to send string
-        wait(NULL);
+int main(int argc,char *argv[])
+{
 
-        close(p2[1]);
-        char* res;
-        //read MD5 result from child
-        read(p2[0], res, 33);
-        //print result
-        printf("MD5::%s",res);
-    } 
-  	/* Child */
-    else {
-    	char userMsg[MSGSIZE];
-		close(p1[1]);
-    	read(p1[0],userMsg,MSGSIZE);
-    	//create MD5 from userInput
-    	char* result;
-        MD5(userMsg);
-    	
+    int _pipe[2];
+    int _pipeErrorCheck = pipe(_pipe);
+    char str1[20]="";
 
-    	close(p1[0]);
-    	close(p2[0]);
-    	//write MD5 result to Parent
-    	write(p2[1], result, strlen(result));
-    	close(p2[1]); 
-    } 
-    return 0; 
-} 
+    signal(SIGTERM, catchSignal);
+
+    //pipe error check
+    if(_pipeErrorCheck == -1){
+        perror("pipes fail");
+        exit(1);
+    }
+
+    pid = fork();
+
+    if (pid == 0){
+        /* Chlid Process */
+        read(_pipe[0], buff, 20);
+        sleep(1);    
+
+        msgrevered = md5(buff);
+        char answer[msgrevered.length() + 1];
+        strcpy(answer, msgrevered.c_str());
+        write(_pipe[1],answer,strlen(answer) + 1);
+        kill(pid,SIGTERM);
+        sleep(3);
+    }
+    else{
+        /* Parent Process */
+        for(int i=1;i<argc;i++){  
+            char temp[20]="";
+            strncpy(temp, argv[i], 20);
+            strcat(temp," ");
+            strcat(str1,temp);
+        }
+            printf("plain text: %s\n",str1);   
+            write(_pipe[1], str1,20);
+            sleep(5);
+        read(_pipe[0], buff, 32);
+        sleep(5);
+        if(flag == 1){
+            printf("encrypted by process: %d : %s\n ",getpid(),buff);
+            sleep(1);
+
+        }
+
+    }
+}
+
